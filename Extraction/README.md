@@ -11,34 +11,51 @@ that is the next stage.
 
 ## What it handles
 
-| Input type      | Extensions                | How                          |
-|-----------------|---------------------------|------------------------------|
-| Image           | `.jpg`, `.jpeg`, `.png`, `.webp` | Gemini multimodal vision     |
-| Text            | `.txt`                    | Cleaned + sent to Gemini     |
-| Audio           | `.m4a`, `.mp3`, `.wav`, `.ogg`   | Gemini native audio input    |
+| Input type | How to pass it |
+|------------|----------------|
+| Image (JPG, PNG, WEBP) | `file_bytes=..., mime_type="image/jpeg"` |
+| Plain text (TXT, WhatsApp) | `text="..."` |
+| Audio (M4A, MP3, WAV, OGG) | `file_bytes=..., mime_type="audio/mp4"` |
 
-All paths produce the same `ExtractedOrder` schema.
+All inputs produce the same `ExtractedOrder` schema.
 
 ## Quick start
 
 ```bash
 pip install -r requirements.txt
-export GEMINI_API_KEY="your-key-here"
 ```
 
+Set your Gemini API key — either in a `.env` file or as an environment variable:
+
+```bash
+# .env file (recommended)
+GEMINI_API_KEY=your-key-here
+GEMINI_MODEL=gemini-2.5-flash   # optional, this is the default
+```
+
+On **Windows PowerShell** use:
+```powershell
+$env:GEMINI_API_KEY = "your-key-here"
+```
+
+## Usage
+
 ```python
-from extraction import OrderExtractor
+from extraction import GeminiOrderExtractor
 
-extractor = OrderExtractor()                 # reads GEMINI_API_KEY
-order = extractor.extract_file(
-    "order_photo.jpg",
-    customer_code="B0491",
-)
+extractor = GeminiOrderExtractor()   # reads GEMINI_API_KEY from .env or env
 
+# --- From a text message ---
+order = extractor.extract(text="20 kg zucchero, 2 cartoni kombucha")
+
+# --- From an image or audio file ---
+with open("Data/1. Orders/V0557_0001.jpg", "rb") as f:
+    order = extractor.extract(file_bytes=f.read(), mime_type="image/jpeg")
+
+# --- Inspect results ---
+print("Delivery note:", order.delivery_note)
 for item in order.items:
     print(item.raw_text, item.quantity, item.unit_hint)
-
-print("Delivery:", order.delivery_note)
 ```
 
 If `GEMINI_API_KEY` is not set, the extractor falls back to **demo
@@ -49,38 +66,67 @@ pipeline be developed without spending API credits.
 
 ```
 extraction/
-├── __init__.py            # Public API
-├── extractor.py           # OrderExtractor - main orchestrator
-├── exceptions.py          # Typed errors
-├── schemas.py             # Pydantic models (ExtractedOrder, ExtractedItem)
-├── validation.py          # Retry helper
-├── strategies/
-│   ├── base.py            # Abstract strategy
-│   ├── image.py           # JPG / PNG / WEBP
-│   ├── text.py            # Plain text + noise cleaning
-│   └── audio.py           # M4A / MP3 / WAV / OGG
-└── prompts/
-    ├── system_prompt.py   # Domain-specific system prompt
-    └── examples.py        # Few-shot examples
+├── __init__.py         # Public API
+├── gemini_pipeline.py  # GeminiOrderExtractor — main class
+├── prompts.py          # System prompt, domain glossary, few-shot examples
+└── schemas.py          # Pydantic models (ExtractedOrder, ExtractedItem)
+
+tests/
+└── test_extraction.py  # Unit tests (no real API calls)
+
+Data/
+├── 1. Orders/          # Sample orders: .jpg, .png, .txt, .m4a + ground-truth .csv
+└── 2. Masterdata/      # Product catalogue (CompleteItemArchive.xlsx, Schablone.xlsx)
+
+run_simulation.py       # Quick demo: runs extraction on 10 samples and compares to CSV
+test.ipynb              # Interactive notebook for manual testing
 ```
 
-The orchestrator detects the MIME type, picks the matching strategy,
-and runs it with a small retry budget. Each strategy passes the file
-to Gemini together with the system prompt, few-shot examples, and the
-Pydantic schema for structured output.
+## Public API
+
+### `GeminiOrderExtractor`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | `str \| None` | `None` | Gemini API key. Falls back to `GEMINI_API_KEY` env var. |
+| `model` | `str \| None` | `None` | Model name. Falls back to `GEMINI_MODEL` env var, then `gemini-2.5-flash`. |
+
+**Attributes:**
+- `live_enabled` (`bool`): `True` when a real Gemini client is active, `False` in demo mode.
+
+**Method `extract(...)`:**
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `text` | `str \| None` | Plain text message. Mutually exclusive with `file_bytes`. |
+| `file_bytes` | `bytes \| None` | Raw bytes of an image or audio file. |
+| `mime_type` | `str \| None` | MIME type of `file_bytes` (required when `file_bytes` is provided). |
+
+Returns an `ExtractedOrder`. Raises `ValueError` on bad argument combinations and `ExtractionError` on API or schema failures.
+
+### Output Schema
+
+```python
+class ExtractedOrder:
+    customer_hint:  str | None      # customer name/code if visible in the document
+    delivery_note:  str | None      # delivery date or special instruction
+    raw_text:       str             # full recognized text or transcript
+    items:          list[ExtractedItem]
+
+class ExtractedItem:
+    raw_text:   str             # item phrase exactly as written
+    quantity:   float | None   # numeric amount, or null if not readable
+    unit_hint:  str | None     # canonical unit: "kg", "carton", "sack", "bottle", …
+    notes:      str | None     # item-specific comment
+```
 
 ## Design choices
 
-- **Strategy pattern**: adding a new file type means a new file in
-  `strategies/`, no changes elsewhere.
-- **Prompts in their own files**: the prompt is the part you will tune
-  most often. Keeping it separate from Python logic makes iteration
-  fast and safe.
-- **No external OCR**: Gemini's native vision outperforms staged
-  OCR-then-LLM pipelines on handwriting and dialect documents (see the
-  Fraunhofer IAIS benchmark).
+- **Single extraction class**: `GeminiOrderExtractor.extract()` accepts both text and binary payloads, keeping the public API minimal.
+- **Prompts in their own file**: [`prompts.py`](extraction/prompts.py) contains the full system prompt, dialect glossary, unit vocabulary, and few-shot examples. Edit this file to tune extraction behaviour without touching orchestration logic.
+- **No external OCR or STT**: Gemini's native multimodal vision and audio understanding handle handwriting, printed forms, and dialect speech in a single API call.
 - **Demo mode**: development without API keys is a first-class use case.
-- **Typed exceptions**: callers can map errors to the right HTTP code.
+- **Typed exceptions**: `ExtractionError` wraps both API failures and schema validation errors so callers can handle them uniformly.
 
 ## Testing
 
@@ -88,14 +134,20 @@ Pydantic schema for structured output.
 pytest tests/ -v
 ```
 
-The tests cover demo mode, MIME detection, prompt construction, text
-cleaning, schema validation, and the retry helper. They do **not**
-call the real Gemini API.
+All 12 tests pass and **do not call the real Gemini API**. They cover
+demo mode, argument validation, JSON schema validation, and prompt content.
+
+## Simulation
+
+```bash
+python run_simulation.py
+```
+
+Runs extraction on 10 sample files (jpg, png, txt, m4a) and prints the
+structured output next to the ground-truth CSV for visual comparison.
 
 ## Limitations
 
-- Files larger than ~20 MB should use the Gemini Files API (not yet
-  implemented here).
-- South Tyrolean dialect coverage relies on the glossary in
-  `system_prompt.py`; add new terms as they are observed.
-- Demo mode returns a fixed mock; it does not vary per input.
+- Files larger than ~20 MB should use the Gemini Files API (not yet implemented).
+- South Tyrolean dialect coverage relies on the glossary in `prompts.py`; add new terms as they are observed.
+- Demo mode returns a fixed mock order; it does not vary per input.
