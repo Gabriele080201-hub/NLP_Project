@@ -3,7 +3,8 @@
 Public API
 ----------
 GeminiOrderExtractor
-    Main class. Call ``extract(text=..., file_bytes=..., mime_type=...)``.
+    Main class. Call ``extract(path)`` with any supported file, or
+    ``extract(text=...)`` for raw text strings.
 parse_order_json
     Validate Gemini's raw JSON response against the ExtractedOrder schema.
 demo_extraction
@@ -11,11 +12,14 @@ demo_extraction
     without a real API key.
 ExtractionError
     Raised on API failure or schema validation failure.
+UnsupportedFileTypeError
+    Raised when the file extension is not supported.
 """
 
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
@@ -25,10 +29,46 @@ from .schemas import ExtractedItem, ExtractedOrder
 
 DEFAULT_MODEL = "gemini-2.5-flash"
 
+# Maps file extension -> MIME type sent to Gemini.
+# Adding a new format means adding one line here.
+_EXTENSION_TO_MIME: dict[str, str] = {
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png":  "image/png",
+    ".webp": "image/webp",
+    ".txt":  "text/plain",
+    ".m4a":  "audio/mp4",
+    ".mp3":  "audio/mpeg",
+    ".wav":  "audio/wav",
+    ".ogg":  "audio/ogg",
+}
+
 
 class ExtractionError(Exception):
     """Raised when Gemini fails or returns output that does not match
     the ExtractedOrder schema."""
+
+
+class UnsupportedFileTypeError(ExtractionError):
+    """Raised when the file extension is not in the supported list."""
+
+
+def _detect_mime(path: Path) -> str:
+    """Return the MIME type for *path* based on its extension.
+
+    Raises
+    ------
+    UnsupportedFileTypeError
+        If the extension is not supported.
+    """
+    ext = path.suffix.lower()
+    mime = _EXTENSION_TO_MIME.get(ext)
+    if mime is None:
+        supported = ", ".join(_EXTENSION_TO_MIME)
+        raise UnsupportedFileTypeError(
+            f"Unsupported file type '{ext}'. Supported: {supported}"
+        )
+    return mime
 
 
 def parse_order_json(text: str) -> ExtractedOrder:
@@ -55,20 +95,8 @@ def parse_order_json(text: str) -> ExtractedOrder:
         raise ExtractionError(f"Schema validation failed: {exc}") from exc
 
 
-def demo_extraction(text: str | None = None) -> ExtractedOrder:
-    """Return a realistic fixed order for offline development.
-
-    Parameters
-    ----------
-    text : str, optional
-        Ignored. Present so callers can pass the same arguments they
-        would pass to a live extractor.
-
-    Returns
-    -------
-    ExtractedOrder
-        A deterministic mocked order.
-    """
+def demo_extraction(*_args: Any, **_kwargs: Any) -> ExtractedOrder:
+    """Return a realistic fixed order for offline development."""
     return ExtractedOrder(
         customer_hint=None,
         delivery_note="per domani",
@@ -84,12 +112,12 @@ def demo_extraction(text: str | None = None) -> ExtractedOrder:
 
 
 class GeminiOrderExtractor:
-    """Extract Foppa orders from text or file bytes using Gemini.
+    """Extract Foppa orders from a file path or a text string using Gemini.
 
     The class loads ``.env`` on init so ``GEMINI_API_KEY`` and
     ``GEMINI_MODEL`` can be configured outside the code. If no API key
-    is found anywhere, the extractor falls back to demo mode and
-    returns mocked data — useful for offline development.
+    is found, the extractor falls back to demo mode and returns mocked
+    data — useful for offline development.
 
     Parameters
     ----------
@@ -130,27 +158,24 @@ class GeminiOrderExtractor:
 
     def extract(
         self,
+        path: str | Path | None = None,
         *,
         text: str | None = None,
-        file_bytes: bytes | None = None,
-        mime_type: str | None = None,
     ) -> ExtractedOrder:
-        """Extract an order from a text message or a file payload.
+        """Extract a structured order from a file or a text string.
 
-        Provide either ``text`` (typed messages) OR ``file_bytes`` plus
-        ``mime_type`` (images, PDF, audio). Both branches return the
-        same ExtractedOrder schema.
+        Pass a file path **or** a raw text string — the method figures
+        out the rest automatically.
 
         Parameters
         ----------
+        path : str or Path, optional
+            Path to an order file (.jpg, .png, .webp, .txt, .m4a,
+            .mp3, .wav, .ogg). The MIME type is detected from the
+            extension automatically.
         text : str, optional
-            Plain text message.
-        file_bytes : bytes, optional
-            Raw bytes of an image, PDF, or audio file.
-        mime_type : str, optional
-            MIME type of ``file_bytes`` (e.g. ``image/jpeg``,
-            ``application/pdf``, ``audio/mp4``). Required when
-            ``file_bytes`` is provided.
+            Raw text message (keyword-only). Use this when you already
+            have the text in memory and don't need a file.
 
         Returns
         -------
@@ -161,32 +186,56 @@ class GeminiOrderExtractor:
         Raises
         ------
         ValueError
-            If neither ``text`` nor ``(file_bytes, mime_type)`` is given.
+            If neither ``path`` nor ``text`` is provided, or if both
+            are provided at the same time.
+        FileNotFoundError
+            If *path* does not exist on disk.
+        UnsupportedFileTypeError
+            If the file extension is not supported.
         ExtractionError
-            If the Gemini call fails or the response does not match
-            the schema.
+            If the Gemini call fails or the response fails schema
+            validation.
+
+        Examples
+        --------
+        >>> extractor.extract("Data/1. Orders/V0557_0001.jpg")
+        >>> extractor.extract("Data/1. Orders/B0244_0001.txt")
+        >>> extractor.extract("Data/1. Orders/B0578_0001.m4a")
+        >>> extractor.extract(text="20 kg zucchero, 2 cartoni kombucha")
         """
-        if text is None and file_bytes is None:
-            raise ValueError(
-                "Provide either `text` or `file_bytes` with `mime_type`."
-            )
-        if file_bytes is not None and mime_type is None:
-            raise ValueError("`mime_type` is required when `file_bytes` is given.")
+        if path is None and text is None:
+            raise ValueError("Provide a file path or text=... (not both, not neither).")
+        if path is not None and text is not None:
+            raise ValueError("Provide either a file path or text=..., not both.")
 
         if not self.live_enabled:
-            return demo_extraction(text)
+            return demo_extraction()
 
         from google.genai import types
 
         full_prompt = f"{EXTRACTION_PROMPT}\n\n{format_examples_block()}"
 
-        if file_bytes is not None:
-            contents: Any = [
-                types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                full_prompt,
-            ]
+        # --- Build the contents list for Gemini ---
+        if text is not None:
+            contents: Any = f"{full_prompt}\n\n[INPUT TEXT]\n{text}"
         else:
-            contents = f"{full_prompt}\n\n[INPUT TEXT]\n{text}"
+            file_path = Path(path)
+            if not file_path.is_file():
+                raise FileNotFoundError(f"File not found: {file_path}")
+
+            mime = _detect_mime(file_path)
+
+            if mime == "text/plain":
+                # Read as text so Gemini sees plain characters, not raw bytes.
+                raw_text = file_path.read_text(encoding="utf-8", errors="replace")
+                contents = f"{full_prompt}\n\n[INPUT TEXT]\n{raw_text}"
+            else:
+                contents = [
+                    types.Part.from_bytes(
+                        data=file_path.read_bytes(), mime_type=mime
+                    ),
+                    full_prompt,
+                ]
 
         try:
             response = self.client.models.generate_content(
