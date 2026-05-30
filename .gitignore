@@ -1,0 +1,18 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+feedback.jsonl
+*.pyc
+.DS_Store
+
+# Local generated outputs
+*_matched.json
+extraction_result.json
+matched_result.json
+matched_result_before.json
+
+# Local project data / reference material
+Start Data Project /
+envfile.env.txt
+Start Info Project/
