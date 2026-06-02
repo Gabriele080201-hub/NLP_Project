@@ -1,0 +1,6 @@
+{
+  "name": "Foppa Intake Ordini",
+  "description": "Piattaforma di inserimento e estrazione ordini per FOPPA. Consente di estrarre e convalidare le righe d'ordine da messaggi vocali, foto e testo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
