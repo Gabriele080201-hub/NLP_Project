@@ -10,6 +10,10 @@ from .schemas import Product
 
 logger = logging.getLogger(__name__)
 
+# Masterdata bundled inside the repo (backend/data). Used automatically when
+# the DATA_DIR env variable is not set, so a fresh clone works out of the box.
+BUNDLED_DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+
 # --- Fallback Mock Data for Testing & Offline Execution ---
 MOCK_CATALOG = [
     Product(
@@ -69,25 +73,35 @@ def load_all_data(data_dir: Optional[str] = None) -> bool:
     If the Excel files are not found or fail to load, falls back to the mock data.
     """
     global CATALOG, CUSTOMER_HISTORY
-    
-    if not data_dir:
-        data_dir = os.getenv("DATA_DIR")
-        
-    if not data_dir:
-        logger.warning("DATA_DIR env variable not set. Using fallback mock data.")
-        return False
-        
-    data_path = Path(data_dir)
-    archive_file = data_path / "2. Masterdata" / "CompleteItemArchive.xlsx"
-    template_file = data_path / "2. Masterdata" / "Schablone.xlsx"
-    
-    if not archive_file.exists() or not template_file.exists():
+
+    # Resolve the masterdata location in priority order:
+    #   1. explicit data_dir argument
+    #   2. DATA_DIR environment variable
+    #   3. masterdata bundled in the repo (backend/data)
+    # The first candidate that actually contains both Excel files wins, so a
+    # stale/invalid DATA_DIR transparently falls back to the bundled data and a
+    # fresh clone works out of the box.
+    candidates = [data_dir, os.getenv("DATA_DIR"), str(BUNDLED_DATA_DIR)]
+
+    archive_file = template_file = None
+    for candidate in candidates:
+        if not candidate:
+            continue
+        cand_path = Path(candidate) / "2. Masterdata"
+        cand_archive = cand_path / "CompleteItemArchive.xlsx"
+        cand_template = cand_path / "Schablone.xlsx"
+        if cand_archive.exists() and cand_template.exists():
+            archive_file, template_file = cand_archive, cand_template
+            logger.info(f"Loading masterdata from {cand_path}.")
+            break
+
+    if archive_file is None:
         logger.warning(
-            f"Excel files not found at: {archive_file} or {template_file}. "
-            "Using fallback mock data."
+            "No masterdata Excel files found (checked data_dir arg, DATA_DIR "
+            "env, and bundled backend/data). Using fallback mock data."
         )
         return False
-        
+
     try:
         logger.info(f"Loading master catalog from {archive_file}...")
         wb_archive = openpyxl.load_workbook(str(archive_file), read_only=True, data_only=True)

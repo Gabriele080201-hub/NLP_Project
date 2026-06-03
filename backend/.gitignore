@@ -1,0 +1,13 @@
+# Secrets — never commit real credentials
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Runtime data
+feedback.jsonl

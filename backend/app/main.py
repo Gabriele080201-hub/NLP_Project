@@ -7,18 +7,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+APP_ROOT = Path(__file__).resolve().parents[1]
+FRONTEND_ROOT = APP_ROOT / "frontend"
+
+# Load secrets (GEMINI_API_KEY, etc.) from backend/.env regardless of the
+# current working directory. The .env file is git-ignored and must never be
+# committed; see .env.example for the expected keys.
+load_dotenv(APP_ROOT / ".env")
+
 from .data_loader import load_all_data, CATALOG
 from .extraction import GeminiOrderExtractor
 from .matching import match_order
 from .schemas import ExtractResponse, FeedbackPayload
-
-APP_ROOT = Path(__file__).resolve().parents[1]
-FRONTEND_ROOT = APP_ROOT / "frontend"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
