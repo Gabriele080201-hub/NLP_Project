@@ -39,6 +39,8 @@ export default function App() {
   const [uploadedPhoto, setUploadedPhoto] = useState<{ name: string; size: string; preview: string } | null>(null);
   const [uploadedAudio, setUploadedAudio] = useState<{ name: string; duration: string } | null>(null);
   const [textPaste, setTextPaste] = useState<string>('');
+  const [realPhotoFile, setRealPhotoFile] = useState<File | null>(null);
+  const [realAudioFile, setRealAudioFile] = useState<File | null>(null);
   
   // Customer Info Row (Optional)
   const [customerCode, setCustomerCode] = useState<string>('');
@@ -133,7 +135,7 @@ export default function App() {
         size: (file.size / 1024).toFixed(1) + " KB",
         preview: URL.createObjectURL(file)
       });
-      // Extract code and ref if possible from file name (e.g. C2026-ORD99 ...)
+      setRealPhotoFile(file);
       detectMetadataFromFilename(file.name);
     }
   };
@@ -146,6 +148,7 @@ export default function App() {
         name: file.name,
         duration: "0:42"
       });
+      setRealAudioFile(file);
     }
   };
 
@@ -157,6 +160,7 @@ export default function App() {
         size: (file.size / 1024).toFixed(1) + " KB",
         preview: URL.createObjectURL(file)
       });
+      setRealPhotoFile(file);
       detectMetadataFromFilename(file.name);
     }
   };
@@ -168,6 +172,7 @@ export default function App() {
         name: file.name,
         duration: "0:42"
       });
+      setRealAudioFile(file);
     }
   };
 
@@ -197,29 +202,62 @@ export default function App() {
     }
   };
 
-  // Submit flow with clean simulated sequential load
-  const handleStartExtraction = () => {
+  // Submit flow: call real backend API, fall back to mock if unavailable
+  const handleStartExtraction = async () => {
     setIsLoading(true);
     setLoadingStep(1);
 
-    // Simulated timeline for loading steps
-    setTimeout(() => {
-      setLoadingStep(2);
-      setTimeout(() => {
-        setLoadingStep(3);
-        setTimeout(() => {
-          setLoadingStep(4);
-          setTimeout(() => {
-            // Populate actual clean state for review page
-            setOrderLines(JSON.parse(JSON.stringify(MOCK_ORDER_LINES)));
-            setIsLoading(false);
-            setCurrentPage(2);
-            // Scroll to top
-            window.scrollTo({ top: 0, behavior: 'instant' });
-          }, 1500);
-        }, 1500);
-      }, 1500);
-    }, 1500);
+    // Advance loading steps visually while API runs
+    const step2 = setTimeout(() => setLoadingStep(2), 1500);
+    const step3 = setTimeout(() => setLoadingStep(3), 3000);
+    const step4 = setTimeout(() => setLoadingStep(4), 4500);
+
+    try {
+      const formData = new FormData();
+      formData.append('customer_code', customerCode || 'CUST-DEMO');
+      if (realPhotoFile) formData.append('file', realPhotoFile);
+      else if (realAudioFile) formData.append('file', realAudioFile);
+      else if (textPaste.trim()) formData.append('text', textPaste.trim());
+
+      const response = await fetch('http://127.0.0.1:8000/api/extract', {
+        method: 'POST',
+        body: formData,
+      });
+
+      clearTimeout(step2); clearTimeout(step3); clearTimeout(step4);
+
+      if (response.ok) {
+        const data = await response.json();
+        const matched = data.matched;
+        if (Array.isArray(matched) && matched.length > 0) {
+          const lines: OrderLine[] = matched.map((item: any, index: number) => ({
+            id: index + 1,
+            originalText: item.original_text ?? `Item ${index + 1}`,
+            description: item.description_it ?? item.product_name ?? '',
+            sku: item.sku ?? '',
+            qty: item.qty != null ? String(item.qty) : '–',
+            unit: item.unit ?? 'pz',
+            confidence: item.confidence ?? 0.9,
+            status: (item.confidence ?? 0.9) >= 0.85 ? 'confirmed' as const : 'pending' as const,
+            matchedSku: item.sku ?? '',
+            alternatives: item.alternatives ?? [],
+          }));
+          setOrderLines(lines);
+        } else {
+          setOrderLines(JSON.parse(JSON.stringify(MOCK_ORDER_LINES)));
+        }
+      } else {
+        setOrderLines(JSON.parse(JSON.stringify(MOCK_ORDER_LINES)));
+      }
+    } catch {
+      clearTimeout(step2); clearTimeout(step3); clearTimeout(step4);
+      console.warn('Backend non raggiungibile, uso dati mock');
+      setOrderLines(JSON.parse(JSON.stringify(MOCK_ORDER_LINES)));
+    }
+
+    setIsLoading(false);
+    setCurrentPage(2);
+    window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   // Silent fire-and-forget feedback post trigger
