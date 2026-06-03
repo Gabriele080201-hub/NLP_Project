@@ -5,14 +5,16 @@ import UploadPage from './components/UploadPage';
 import ReviewPage from './components/ReviewPage';
 import SuccessPage from './components/SuccessPage';
 import LoadingModal from './components/LoadingModal';
-import { Language, OrderLine, ExtractionNote } from './types';
+import { Language, OrderLine, ExtractionNote, OrderSource } from './types';
 
-// Simple heuristic to guess item language for Giulia's lang badge
+const API_BASE = 'http://localhost:8000';
+
+// Simple heuristic to guess item language for the per-line language badge
 const guessLanguage = (originalText: string): 'DE' | 'IT' | 'Mix' => {
   const text = originalText.toLowerCase();
   const deWords = ['schwein', 'kaiser', 'deckel', 'naturjoghurt', 'apfelsaft', 'ohne', 'vom', 'angebot', 'lieferung', 'morgen', 'freitag'];
   const itWords = ['latte', 'intero', 'litri', 'pane', 'forse', 'sacchi', 'speck', 'consegna', 'venerdi', 'mattina', 'pomodoro', 'salsa'];
-  
+
   let deCount = 0;
   let itCount = 0;
   for (const w of deWords) {
@@ -21,7 +23,7 @@ const guessLanguage = (originalText: string): 'DE' | 'IT' | 'Mix' => {
   for (const w of itWords) {
     if (text.includes(w)) itCount++;
   }
-  
+
   if (deCount > 0 && itCount > 0) return 'Mix';
   if (itCount > deCount) return 'IT';
   return 'DE'; // Default to German
@@ -35,17 +37,19 @@ const getSkuFromMatchedSkuString = (matchedSkuStr?: string): string => {
 };
 
 export default function App() {
-  // 5. DEFAULT LANGUAGE = GERMAN (DE). On first load, DE always first.
+  // Default language = German (DE)
   const [lang, setLang] = useState<Language>('DE');
   const [page, setPage] = useState<1 | 2 | 3>(1);
   const [showLoadingModal, setShowLoadingModal] = useState(false);
   const [loadingStep, setLoadingStep] = useState<number>(1);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Extracted results to pass to ReviewPage
   const [extractedLines, setExtractedLines] = useState<OrderLine[]>([]);
   const [extractionNotes, setExtractionNotes] = useState<ExtractionNote[]>([]);
   const [logistics, setLogistics] = useState<{ it: string; de: string }>({ it: '', de: '' });
   const [rawText, setRawText] = useState<string>('');
+  const [source, setSource] = useState<OrderSource | null>(null);
 
   // Saved upload metadata from Page 1
   const [submissionMetadata, setSubmissionMetadata] = useState<{
@@ -68,12 +72,16 @@ export default function App() {
     orderReference: string;
     date: string;
     confirmedCount: number;
+    editedCount: number;
+    rejectedCount: number;
     totalCount: number;
   }>({
     customerCode: '',
     orderReference: '',
     date: '',
     confirmedCount: 0,
+    editedCount: 0,
+    rejectedCount: 0,
     totalCount: 0
   });
 
@@ -95,16 +103,27 @@ export default function App() {
       inputType: data.inputType,
       filename: data.filename
     });
+
+    // Capture the real source so it can be shown side-by-side during review.
+    // Revoke any previous object URL to avoid leaks.
+    setSource((prev) => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      if (data.inputType === 'IMAGINE' && data.photoFile) {
+        return { kind: 'image', url: URL.createObjectURL(data.photoFile), mime: data.photoFile.type, filename: data.filename };
+      }
+      if (data.inputType === 'VOCALE' && data.audioFile) {
+        return { kind: 'audio', url: URL.createObjectURL(data.audioFile), mime: data.audioFile.type, filename: data.filename };
+      }
+      return { kind: 'text', text: data.textPaste || '', filename: data.filename };
+    });
+
+    setLoadError(null);
     setLoadingStep(1);
     setShowLoadingModal(true);
 
-    // Simulate stepping through sequential stages for UI visual feedback
-    const timer1 = setTimeout(() => setLoadingStep(2), 600);
-    const timer2 = setTimeout(() => setLoadingStep(3), 1500);
-
     try {
       const formData = new FormData();
-      formData.append('customer_code', data.customerCode || '1204');
+      formData.append('customer_code', data.customerCode || 'CUST-DEMO');
 
       if (data.inputType === 'TESTO') {
         formData.append('text', data.textPaste || '');
@@ -113,36 +132,29 @@ export default function App() {
         if (fileObj) {
           formData.append('file', fileObj);
         } else {
-          // If no raw file object is present (simulated file mode on Page 1)
-          // We pass the simulated text transcription so the backend can run end-to-end matching/extraction.
-          const simulatedText = `5 schweinskaiserteile ohne deckl
-2 naturjoghurt brimi
-latte intero 6 litri
-pane tipo 00 forse 3 sacchi
-speck alto adige affettato
-Apfelsaft 12x1L Fa. Juval
-consegna venerdi mattina`;
-          formData.append('text', simulatedText);
+          formData.append('text', data.textPaste || '');
         }
       }
 
-      const response = await fetch('http://localhost:8000/api/extract', {
+      setLoadingStep(2); // extracting + matching (real work)
+
+      const response = await fetch(`${API_BASE}/api/extract`, {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error(`Extraction failed with status ${response.status}`);
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const result = await response.json(); // ExtractResponse
 
-      // Map backend MatchedItem array to Giulia's OrderLine format
+      // Map backend MatchedItem array to the OrderLine format used by the UI
       const backendItems = result.matched?.items || [];
       const mappedLines: OrderLine[] = backendItems.map((item: any, index: number) => {
         const scoreVal = item.selected?.score !== undefined ? item.selected.score / 100 : 0.0;
         const matchedSkuStr = item.selected?.code ? `${item.selected.code} – ${item.selected.description || ''}` : '';
-        
+
         let statusVal: OrderLine['status'] = 'to_complete';
         if (item.selected?.code === 'UNKNOWN' || item.selected?.code === 'UNK00') {
           statusVal = 'unreadable';
@@ -152,7 +164,7 @@ consegna venerdi mattina`;
           statusVal = 'pending';
         }
 
-        const altSkus: string[] = (item.alternatives || []).map((alt: any) => 
+        const altSkus: string[] = (item.alternatives || []).map((alt: any) =>
           `${alt.code} – ${alt.description}`
         );
 
@@ -192,7 +204,6 @@ consegna venerdi mattina`;
         });
       }
 
-      // Also grab notes from item-level extraction if any
       (result.extracted?.items || []).forEach((extItem: any) => {
         if (extItem.notes && extItem.notes.trim()) {
           notesList.push({
@@ -208,35 +219,30 @@ consegna venerdi mattina`;
 
       setExtractionNotes(notesList);
 
-      // Structure logistics note
       const logisticsInfo = {
-        it: deliveryNote 
-          ? `Il sistema ha rilevato note di consegna: "${deliveryNote}". Nessuna ulteriore incoerenza riscontrata.` 
-          : "Nessuna nota logistica rilevata.",
-        de: deliveryNote 
-          ? `Das System hat Lieferhinweise erkannt: "${deliveryNote}". Keine weiteren Unstimmigkeiten festgestellt.` 
-          : "Keine Logistikhinweise erkannt."
+        it: deliveryNote
+          ? `Rilevata nota di consegna: "${deliveryNote}".`
+          : 'Nessuna nota logistica rilevata.',
+        de: deliveryNote
+          ? `Lieferhinweis erkannt: "${deliveryNote}".`
+          : 'Keine Logistikhinweise erkannt.'
       };
       setLogistics(logisticsInfo);
 
-      // Set raw extracted text
-      const rawTextContent = result.extracted?.raw_text || '';
-      setRawText(rawTextContent);
+      setRawText(result.extracted?.raw_text || '');
 
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      setLoadingStep(4); // Completing sequence
-
+      setLoadingStep(3); // done
     } catch (error) {
       console.error('Error extracting order:', error);
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      setShowLoadingModal(false);
-      alert(lang === 'IT' ? 'Errore durante l\'estrazione dell\'ordine.' : 'Fehler bei der Bestellungsextraktion.');
+      setLoadError(
+        lang === 'IT'
+          ? "Estrazione non riuscita. Verifica che il backend sia attivo su :8000 e riprova."
+          : 'Extraktion fehlgeschlagen. Prüfe, ob das Backend auf :8000 läuft, und versuche es erneut.'
+      );
     }
   };
 
-  // Callback from modal when loading step timer completes
+  // Callback from modal when the done step completes
   const handleLoadingComplete = () => {
     setShowLoadingModal(false);
     setPage(2);
@@ -247,11 +253,10 @@ consegna venerdi mattina`;
     summary: typeof successSummary,
     finalLines: OrderLine[]
   ) => {
-    // Construct ReviewedItem array for FeedbackPayload
     const reviewedItems = finalLines.map(line => {
       const predictedSku = getSkuFromMatchedSkuString(line.initialMatchedSku);
       const currentSku = getSkuFromMatchedSkuString(line.matchedSku);
-      
+
       let action: 'confirmed' | 'edited' | 'rejected' = 'confirmed';
       if (line.status === 'unreadable' || !currentSku || currentSku === 'UNKNOWN' || currentSku === 'UNK00') {
         action = 'rejected';
@@ -270,24 +275,19 @@ consegna venerdi mattina`;
     });
 
     const payload = {
-      customer_code: summary.customerCode || '1204',
+      customer_code: summary.customerCode || 'CUST-DEMO',
       items: reviewedItems,
-      reviewer_note: `Reviewed via React frontend. Transmitted ${summary.confirmedCount} / ${summary.totalCount} lines.`
+      reviewer_note: `Reviewed via operator console. Transmitted ${summary.confirmedCount} / ${summary.totalCount} lines.`
     };
 
     try {
-      const response = await fetch('http://localhost:8000/api/feedback', {
+      const response = await fetch(`${API_BASE}/api/feedback`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
       if (!response.ok) {
         console.error('Failed to submit feedback to backend');
-      } else {
-        console.log('Feedback submitted successfully');
       }
     } catch (err) {
       console.error('Error submitting feedback:', err);
@@ -297,23 +297,14 @@ consegna venerdi mattina`;
     setPage(3);
   };
 
-  // Reset order session
   const handleResetSession = () => {
     setPage(1);
-    setSubmissionMetadata({
-      customerCode: '',
-      orderReference: '',
-      date: '',
-      inputType: 'TESTO',
-      filename: ''
+    setSource((prev) => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return null;
     });
-    setSuccessSummary({
-      customerCode: '',
-      orderReference: '',
-      date: '',
-      confirmedCount: 0,
-      totalCount: 0
-    });
+    setSubmissionMetadata({ customerCode: '', orderReference: '', date: '', inputType: 'TESTO', filename: '' });
+    setSuccessSummary({ customerCode: '', orderReference: '', date: '', confirmedCount: 0, editedCount: 0, rejectedCount: 0, totalCount: 0 });
     setExtractedLines([]);
     setExtractionNotes([]);
     setLogistics({ it: '', de: '' });
@@ -321,17 +312,12 @@ consegna venerdi mattina`;
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#F8F9FA] select-none text-[#1C2B3A] antialiased">
-      {/* Navbar present on all pages */}
+    <div className="flex flex-col min-h-screen bg-paper text-ink-900 antialiased">
       <Navbar currentLang={lang} onLanguageChange={setLang} />
 
-      {/* Main content area */}
       <main className="flex-grow">
         {page === 1 && (
-          <UploadPage
-            currentLang={lang}
-            onSubmit={handlePage1Submit}
-          />
+          <UploadPage currentLang={lang} onSubmit={handlePage1Submit} />
         )}
 
         {page === 2 && (
@@ -342,6 +328,7 @@ consegna venerdi mattina`;
             initialNotes={extractionNotes}
             logistics={logistics}
             rawText={rawText}
+            source={source}
             onConfirmOrder={handleConfirmOrderAndSubmit}
             onBackToUpload={() => setPage(1)}
           />
@@ -354,22 +341,24 @@ consegna venerdi mattina`;
             orderReference={successSummary.orderReference}
             date={successSummary.date}
             confirmedLinesCount={successSummary.confirmedCount}
+            editedLinesCount={successSummary.editedCount}
+            rejectedLinesCount={successSummary.rejectedCount}
             totalLinesCount={successSummary.totalCount}
             onReset={handleResetSession}
           />
         )}
       </main>
 
-      {/* Loading Modal Overlay */}
       {showLoadingModal && (
         <LoadingModal
           currentLang={lang}
           loadingStep={loadingStep}
+          error={loadError}
           onComplete={handleLoadingComplete}
+          onClose={() => setShowLoadingModal(false)}
         />
       )}
 
-      {/* Footer present on all pages with correct translated indicator */}
       <Footer currentLang={lang} />
     </div>
   );

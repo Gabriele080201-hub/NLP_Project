@@ -1,8 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { FileText, Music, Sparkles, Calendar, Tag, User, UploadCloud } from 'lucide-react';
+import { Image as ImageIcon, Mic, Type, UploadCloud, X, ArrowRight, User, Tag, Calendar } from 'lucide-react';
 import { Language } from '../types';
 import { translations } from '../translations';
 import { motion } from 'motion/react';
+
+type Method = 'image' | 'audio' | 'text';
 
 interface UploadPageProps {
   currentLang: Language;
@@ -18,455 +20,304 @@ interface UploadPageProps {
   }) => void;
 }
 
+const L = {
+  IT: {
+    lead: 'Carica un ordine cliente — foto, nota vocale o testo. Lo trascriviamo e lo abbiniamo al catalogo, tu lo validi.',
+    tabImage: 'Foto', tabAudio: 'Audio', tabText: 'Testo',
+    dropImage: 'Trascina una foto o clicca per sceglierla',
+    dropAudio: 'Trascina una nota vocale o clicca per sceglierla',
+    formatsImage: 'JPG, PNG, HEIC · foto WhatsApp o note scritte a mano',
+    formatsAudio: 'MP3, M4A, OGG, WAV · messaggi vocali',
+    textPlaceholder: "Incolla qui il messaggio WhatsApp del cliente…",
+    loadSample: 'Usa un messaggio di esempio',
+    remove: 'Rimuovi',
+    chars: 'caratteri',
+    custHelper: 'Deve combaciare col codice dello storico cliente (es. B0491). Si compila da solo dal nome file, se presente.',
+    refOptional: 'opzionale',
+    submit: 'Estrai ordine',
+  },
+  DE: {
+    lead: 'Lade eine Kundenbestellung hoch — Foto, Sprachnachricht oder Text. Wir transkribieren und matchen sie, du validierst.',
+    tabImage: 'Foto', tabAudio: 'Audio', tabText: 'Text',
+    dropImage: 'Foto hierher ziehen oder klicken zum Auswählen',
+    dropAudio: 'Sprachnachricht hierher ziehen oder klicken',
+    formatsImage: 'JPG, PNG, HEIC · WhatsApp-Foto oder handschriftliche Notiz',
+    formatsAudio: 'MP3, M4A, OGG, WAV · Sprachnachrichten',
+    textPlaceholder: 'WhatsApp-Nachricht des Kunden hier einfügen…',
+    loadSample: 'Beispielnachricht verwenden',
+    remove: 'Entfernen',
+    chars: 'Zeichen',
+    custHelper: 'Muss zum Code der Kundenhistorie passen (z. B. B0491). Wird ggf. aus dem Dateinamen übernommen.',
+    refOptional: 'optional',
+    submit: 'Bestellung extrahieren',
+  },
+} as const;
+
+const SAMPLE_TEXT = `Hallo, bitte für morgen liefern:
+5 schweinskaiserteile ohne deckl
+2 naturjoghurt brimi
+latte intero 6 litri
+pane tipo 00 forse 3 sacchi
+Apfelsaft 12x1L
+danke`;
+
+const fmtSize = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+
 export default function UploadPage({ currentLang, onSubmit }: UploadPageProps) {
   const t = translations[currentLang];
+  const x = L[currentLang];
 
-  // Forms statuses
-  const [imageFile, setImageFile] = useState<{ name: string; sizeStr: string } | null>(null);
-  const [audioFile, setAudioFile] = useState<{ name: string; sizeStr: string } | null>(null);
-  const [photoFileObj, setPhotoFileObj] = useState<File | null>(null);
-  const [audioFileObj, setAudioFileObj] = useState<File | null>(null);
+  const [method, setMethod] = useState<Method>('image');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [textVal, setTextVal] = useState('');
+  const [dragOver, setDragOver] = useState(false);
 
-  // Customer Info state
   const [customerCode, setCustomerCode] = useState('');
   const [orderReference, setOrderReference] = useState('');
-  
-  // Today date formatted as YYYY-MM-DD
   const todayStr = new Date().toISOString().substring(0, 10);
   const [dateVal, setDateVal] = useState(todayStr);
 
-  const fileInputRefImg = useRef<HTMLInputElement>(null);
-  const fileInputRefAud = useRef<HTMLInputElement>(null);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const audInputRef = useRef<HTMLInputElement>(null);
 
   const extractCustomerCodeFromFilename = (name: string): string => {
     const match = name.match(/^([A-Za-z]\d{4})/);
     return match ? match[1].toUpperCase() : '';
   };
 
-  // Handle Image simulation select
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      setImageFile({
-        name: file.name,
-        sizeStr: `${Math.round(file.size / 1024)} KB`
-      });
-      setPhotoFileObj(file);
-      const detectedCode = extractCustomerCodeFromFilename(file.name);
-      if (detectedCode) {
-        setCustomerCode(detectedCode);
-      }
-      setOrderReference('FORN-2026-031');
-    }
+  const acceptImage = (file: File) => {
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    setPhotoFile(file);
+    setPhotoUrl(URL.createObjectURL(file));
+    const code = extractCustomerCodeFromFilename(file.name);
+    if (code) setCustomerCode(code);
   };
-
-  const triggerImageSimulate = () => {
-    setImageFile({
-      name: 'B0491_0001.jpg',
-      sizeStr: '7 KB'
-    });
-    setPhotoFileObj(null); // Simulated photo file has no raw File object (handled as fallback)
-    setCustomerCode('B0491');
-    setOrderReference('FORN-2026-031');
+  const acceptAudio = (file: File) => {
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioFile(file);
+    setAudioUrl(URL.createObjectURL(file));
+    const code = extractCustomerCodeFromFilename(file.name);
+    if (code) setCustomerCode(code);
   };
-
-  const handleAudioSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      setAudioFile({
-        name: file.name,
-        sizeStr: `${Math.round(file.size / 1024)} KB`
-      });
-      setAudioFileObj(file);
-      const detectedCode = extractCustomerCodeFromFilename(file.name);
-      if (detectedCode) {
-        setCustomerCode(detectedCode);
-      }
-      setOrderReference('FORN-2026-031');
-    }
+  const removeImage = () => {
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    setPhotoFile(null);
+    setPhotoUrl(null);
+    if (imgInputRef.current) imgInputRef.current.value = '';
   };
-
-  const triggerAudioSimulate = () => {
-    setAudioFile({
-      name: 'voice_message_031.mp3',
-      sizeStr: '220 KB'
-    });
-    setAudioFileObj(null);
-    setCustomerCode('B0491');
-    setOrderReference('FORN-2026-031');
-  };
-
-  const handleRemoveImage = () => {
-    setImageFile(null);
-    setPhotoFileObj(null);
-    if (fileInputRefImg.current) fileInputRefImg.current.value = '';
-    if (!audioFile && !textVal) {
-      setCustomerCode('');
-      setOrderReference('');
-    }
-  };
-
-  const handleRemoveAudio = () => {
+  const removeAudio = () => {
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
     setAudioFile(null);
-    setAudioFileObj(null);
-    if (fileInputRefAud.current) fileInputRefAud.current.value = '';
-    if (!imageFile && !textVal) {
-      setCustomerCode('');
-      setOrderReference('');
-    }
+    setAudioUrl(null);
+    if (audInputRef.current) audInputRef.current.value = '';
   };
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setTextVal(val);
-    if (val.trim() && !orderReference) {
-      setOrderReference('FORN-2026-031');
-    } else if (!val.trim() && !imageFile && !audioFile) {
-      setCustomerCode('');
-      setOrderReference('');
-    }
-  };
+  const isFormValid = method === 'image' ? !!photoFile : method === 'audio' ? !!audioFile : !!textVal.trim();
 
-  const isFormValid = imageFile || audioFile || textVal.trim();
-
-  const handleFormSubmit = () => {
+  const handleSubmit = () => {
     if (!isFormValid) return;
-
-    // Detect Input Type priorities (Image -> Audio -> Text)
-    let finalInputType: 'IMAGINE' | 'VOCALE' | 'TESTO' = 'TESTO';
-    let finalName = 'text_paste.txt';
-
-    if (imageFile) {
-      finalInputType = 'IMAGINE';
-      finalName = imageFile.name;
-    } else if (audioFile) {
-      finalInputType = 'VOCALE';
-      finalName = audioFile.name;
+    if (method === 'image') {
+      onSubmit({ customerCode, orderReference, date: dateVal, inputType: 'IMAGINE', filename: photoFile!.name, photoFile });
+    } else if (method === 'audio') {
+      onSubmit({ customerCode, orderReference, date: dateVal, inputType: 'VOCALE', filename: audioFile!.name, audioFile });
+    } else {
+      onSubmit({ customerCode, orderReference, date: dateVal, inputType: 'TESTO', filename: 'text_paste.txt', textPaste: textVal });
     }
-
-    onSubmit({
-      customerCode: customerCode || '1204',
-      orderReference: orderReference || 'FORN-2026-031',
-      date: dateVal,
-      inputType: finalInputType,
-      filename: finalName,
-      photoFile: imageFile ? photoFileObj : null,
-      audioFile: audioFile ? audioFileObj : null,
-      textPaste: textVal
-    });
   };
+
+  const tabs: { id: Method; label: string; icon: React.ReactNode }[] = [
+    { id: 'image', label: x.tabImage, icon: <ImageIcon size={16} /> },
+    { id: 'audio', label: x.tabAudio, icon: <Mic size={16} /> },
+    { id: 'text', label: x.tabText, icon: <Type size={16} /> },
+  ];
+
+  const dropZoneCls = `border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors flex flex-col items-center justify-center gap-4 ${
+    dragOver ? 'border-brand-400 bg-brand-50' : 'border-ink-200 hover:border-brand-300 bg-paper'
+  }`;
 
   return (
     <motion.div
-      id="upload-page-root"
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15, ease: 'easeOut' }}
-      className="max-w-[1400px] mx-auto px-6 py-8"
+      transition={{ duration: 0.18, ease: [0.22, 0.61, 0.36, 1] }}
+      className="max-w-[920px] mx-auto px-6 py-10"
     >
-      {/* Page Title */}
-      <h2 className="text-[28px] font-bold text-[#1C2B3A] mb-8 leading-tight">
-        {t.page1Title}
-      </h2>
+      <h1 className="fp-h1 text-[34px] text-ink-900 mb-2">{t.page1Title}</h1>
+      <p className="text-ink-600 text-[15px] leading-relaxed mb-8 max-w-[64ch]">{x.lead}</p>
 
-      {/* Grid of Three Input Zones */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        
-        {/* Zone 1: Image Upload */}
-        <div id="zone-image-upload" className="bg-white border border-[#E0E0E0] rounded-[8px] p-6 shadow-sm flex flex-col justify-between min-h-[420px]">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[11px] font-bold text-[#1565C0] tracking-widest uppercase">
-                {t.zone1Label}
-              </span>
-              <span className="bg-[#FFC107] text-slate-900 text-[10px] font-bold px-2 py-0.5 rounded tracking-wide">
-                {t.zone1Badge}
-              </span>
-            </div>
-            <h4 className="text-[15px] font-bold text-[#1C2B3A] mb-1 leading-snug">
-              {t.zone1Helper}
-            </h4>
-          </div>
-
-          {!imageFile ? (
-            <div
-              onClick={() => fileInputRefImg.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  const file = e.dataTransfer.files[0];
-                  setImageFile({ name: file.name, sizeStr: `${Math.round(file.size / 1024)} KB` });
-                  setPhotoFileObj(file);
-                  setCustomerCode('1204');
-                  setOrderReference('FORN-2026-031');
-                }
-              }}
-              className="border-2 border-dashed border-[#B0BEC5] hover:border-[#1565C0] rounded-[6px] p-6 text-center cursor-pointer transition-all duration-150 py-12 flex flex-col items-center justify-center space-y-4 my-4"
+      <div className="bg-surface border border-ink-200 rounded-2xl shadow-sm p-6 sm:p-7">
+        {/* Method selector */}
+        <div className="inline-flex p-1 rounded-full bg-paper-2 border border-ink-200 mb-6">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setMethod(tab.id)}
+              aria-pressed={method === tab.id}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-colors fp-focus ${
+                method === tab.id ? 'bg-surface text-brand-600 shadow-sm' : 'text-ink-500 hover:text-ink-700'
+              }`}
             >
-              <input
-                type="file"
-                ref={fileInputRefImg}
-                accept="image/*"
-                onChange={handleImageSelect}
-                className="hidden"
-              />
-              <div className="text-[#9E9E9E] p-3 bg-[#F8F9FA] rounded-full">
-                <UploadCloud size={32} />
-              </div>
-              <div>
-                <p className="text-[#1C2B3A] font-semibold text-sm">
-                  {t.dropAreaText}
-                </p>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    triggerImageSimulate();
-                  }}
-                  className="mt-3 text-xs text-[#1565C0] font-bold hover:underline bg-[#1565C0]/5 px-3 py-1.5 rounded"
-                >
-                  {currentLang === 'IT' ? 'Carica file d\'esempio B0491_0001.jpg' : 'Musterdatei B0491_0001.jpg laden'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="border border-[#E0E0E0] rounded-[6px] p-4 bg-[#F8F9FA] my-4 flex flex-col items-center justify-center space-y-4">
-              {/* Image paper thumbnail matching the design layout */}
-              <div className="bg-[#CCCCCC] rounded p-4 max-w-[200px] w-full shadow-inner border border-stone-300 text-center font-mono text-[11px] leading-tight text-[#1C2B3A] select-none rotate-[-1deg]">
-                <p className="font-bold border-b border-stone-400 pb-1 mb-1.5 text-stone-700 uppercase tracking-widest text-[9px]">
-                  FOPPA INT.
-                </p>
-                <div className="text-left space-y-1">
-                  <p>Hallo bestellung:</p>
-                  <p className="font-bold">Schinken</p>
-                  <p className="font-bold">Salami</p>
-                  <p>Vanile, marmelade, leere briosch,</p>
-                  <p className="font-bold">Streichwurst</p>
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Active zone */}
+        {method === 'image' && (
+          <div>
+            {!photoFile ? (
+              <div
+                onClick={() => imgInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) acceptImage(f); }}
+                className={dropZoneCls}
+              >
+                <input ref={imgInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) acceptImage(f); }} />
+                <div className="w-14 h-14 rounded-full bg-brand-50 text-brand-500 flex items-center justify-center">
+                  <UploadCloud size={26} />
+                </div>
+                <div>
+                  <p className="text-ink-800 font-semibold">{x.dropImage}</p>
+                  <p className="text-ink-500 text-[13px] mt-1">{x.formatsImage}</p>
                 </div>
               </div>
-              <div className="text-center w-full">
-                <p className="font-mono text-xs font-bold text-[#1C2B3A] truncate max-w-[230px] mx-auto">
-                  {imageFile.name}
-                </p>
-                <p className="text-[11px] text-[#9E9E9E] font-medium mt-0.5">
-                  {imageFile.sizeStr}
-                </p>
-                <button
-                  onClick={handleRemoveImage}
-                  className="mt-3 text-xs font-bold text-[#C62828] bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded transition-all duration-150"
-                >
-                  {currentLang === 'IT' ? 'Rimuovi' : 'Entfernen'}
-                </button>
+            ) : (
+              <div className="rounded-xl border border-ink-200 bg-paper p-4 flex flex-col items-center gap-4">
+                <img src={photoUrl!} alt={photoFile.name} className="max-h-[340px] w-auto rounded-lg shadow-sm object-contain" />
+                <div className="flex items-center justify-between w-full">
+                  <div className="min-w-0">
+                    <p className="fp-mono text-[13px] font-bold text-ink-800 truncate">{photoFile.name}</p>
+                    <p className="text-[12px] text-ink-500">{fmtSize(photoFile.size)}</p>
+                  </div>
+                  <button onClick={removeImage} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-danger bg-danger-soft hover:bg-accent-100 px-3 py-1.5 rounded-full transition-colors">
+                    <X size={14} /> {x.remove}
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-
-          <p className="text-[11px] text-[#9E9E9E] font-medium italic mt-2">
-            {t.zone1Subnote}
-          </p>
-        </div>
-
-        {/* Zone 2: Audio Upload */}
-        <div id="zone-audio-upload" className="bg-white border border-[#E0E0E0] rounded-[8px] p-6 shadow-sm flex flex-col justify-between min-h-[420px]">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[11px] font-bold text-[#1565C0] tracking-widest uppercase">
-                {t.zone2Label}
-              </span>
-            </div>
-            <h4 className="text-[15px] font-bold text-[#1C2B3A] mb-1 leading-snug">
-              {t.zone2Helper}
-            </h4>
+            )}
           </div>
+        )}
 
-          {!audioFile ? (
-            <div
-              onClick={() => fileInputRefAud.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  const file = e.dataTransfer.files[0];
-                  setAudioFile({ name: file.name, sizeStr: `${Math.round(file.size / 1024)} KB` });
-                  setAudioFileObj(file);
-                  setCustomerCode('1204');
-                  setOrderReference('FORN-2026-031');
-                }
-              }}
-              className="border-2 border-dashed border-[#B0BEC5] hover:border-[#1565C0] rounded-[6px] p-6 text-center cursor-pointer transition-all duration-150 py-12 flex flex-col items-center justify-center space-y-4 my-4"
-            >
-              <input
-                type="file"
-                ref={fileInputRefAud}
-                accept="audio/*"
-                onChange={handleAudioSelect}
-                className="hidden"
+        {method === 'audio' && (
+          <div>
+            {!audioFile ? (
+              <div
+                onClick={() => audInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) acceptAudio(f); }}
+                className={dropZoneCls}
+              >
+                <input ref={audInputRef} type="file" accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) acceptAudio(f); }} />
+                <div className="w-14 h-14 rounded-full bg-brand-50 text-brand-500 flex items-center justify-center">
+                  <Mic size={26} />
+                </div>
+                <div>
+                  <p className="text-ink-800 font-semibold">{x.dropAudio}</p>
+                  <p className="text-ink-500 text-[13px] mt-1">{x.formatsAudio}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-ink-200 bg-paper p-5 flex flex-col items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-brand-50 text-brand-500 flex items-center justify-center">
+                  <Mic size={26} />
+                </div>
+                <audio controls src={audioUrl!} className="w-full max-w-[420px]" />
+                <div className="flex items-center justify-between w-full max-w-[420px]">
+                  <div className="min-w-0">
+                    <p className="fp-mono text-[13px] font-bold text-ink-800 truncate">{audioFile.name}</p>
+                    <p className="text-[12px] text-ink-500">{fmtSize(audioFile.size)}</p>
+                  </div>
+                  <button onClick={removeAudio} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-danger bg-danger-soft hover:bg-accent-100 px-3 py-1.5 rounded-full transition-colors">
+                    <X size={14} /> {x.remove}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {method === 'text' && (
+          <div>
+            <div className="relative">
+              <textarea
+                value={textVal}
+                onChange={(e) => setTextVal(e.target.value)}
+                placeholder={x.textPlaceholder}
+                className="w-full min-h-[220px] p-4 border border-ink-200 rounded-xl text-[14px] fp-mono text-ink-800 bg-paper focus:outline-none focus:border-brand-400 fp-focus resize-y leading-relaxed"
               />
-              <div className="text-[#9E9E9E] p-3 bg-[#F8F9FA] rounded-full">
-                <Music size={32} />
-              </div>
-              <div>
-                <p className="text-[#1C2B3A] font-semibold text-sm">
-                  {t.dropAreaText}
-                </p>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    triggerAudioSimulate();
-                  }}
-                  className="mt-3 text-xs text-[#1565C0] font-bold hover:underline bg-[#1565C0]/5 px-3 py-1.5 rounded"
-                >
-                  {currentLang === 'IT' ? 'Carica nota vocale d\'esempio' : 'Muster-Sprachnachricht laden'}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="border border-[#E0E0E0] rounded-[6px] p-4 bg-[#F8F9FA] my-4 flex flex-col items-center justify-center space-y-4">
-              {/* Speaker icon representing audio */}
-              <div className="text-[#1565C0] p-4 bg-[#1565C0]/10 rounded-full animate-pulse">
-                <Music size={36} />
-              </div>
-              {/* Live styled HTML5 audio controller */}
-              <audio controls className="w-full h-8 mt-1">
-                <source src="mock" />
-              </audio>
-              <div className="text-center w-full">
-                <p className="font-mono text-xs font-bold text-[#1C2B3A] truncate max-w-[230px] mx-auto">
-                  {audioFile.name}
-                </p>
-                <p className="text-[11px] text-[#9E9E9E] font-medium mt-0.5">
-                  {audioFile.sizeStr}
-                </p>
-                <button
-                  onClick={handleRemoveAudio}
-                  className="mt-3 text-xs font-bold text-[#C62828] bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded transition-all duration-150"
-                >
-                  {currentLang === 'IT' ? 'Rimuovi' : 'Entfernen'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Dialect message box with grey background and no emoji */}
-          <div className="bg-[#F8F9FA] border border-[#E0E0E0] p-3 rounded-[6px] text-[11px] text-[#1C2B3A] font-medium leading-relaxed mt-2">
-            {t.zone2AudioInfo}
-          </div>
-        </div>
-
-        {/* Zone 3: Text Paste */}
-        <div id="zone-text-paste" className="bg-white border border-[#E0E0E0] rounded-[8px] p-6 shadow-sm flex flex-col justify-between min-h-[420px]">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-[11px] font-bold text-[#1565C0] tracking-widest uppercase">
-                {t.zone3Label}
+              <span className="absolute bottom-3 right-3 bg-surface/90 text-[11px] text-ink-400 font-bold px-2 py-0.5 rounded-full border border-ink-200">
+                {textVal.length} {x.chars}
               </span>
             </div>
-            <h4 className="text-[15px] font-bold text-[#1C2B3A] mb-1 leading-snug">
-              {t.zone3Description}
-            </h4>
+            <button
+              onClick={() => setTextVal(SAMPLE_TEXT)}
+              className="mt-3 text-[13px] font-bold text-brand-600 hover:text-brand-700 transition-colors"
+            >
+              {x.loadSample}
+            </button>
           </div>
-
-          <div className="relative flex-grow my-4 flex flex-col">
-            <textarea
-              id="textarea-whatsapp-text"
-              value={textVal}
-              onChange={handleTextChange}
-              placeholder={t.zone3Placeholder}
-              className="w-full flex-grow min-h-[180px] p-3 border border-[#E0E0E0] rounded-[6px] text-xs font-mono text-[#1C2B3A] focus:outline-none focus:border-[#1565C0] resize-y bg-[#F8F9FA] leading-relaxed"
-            />
-            {/* Live character counter */}
-            <span className="absolute bottom-2.5 right-2.5 bg-white/90 text-[10px] text-[#9E9E9E] font-bold px-1.5 py-0.5 rounded shadow-sm border border-[#E0E0E0] font-mono select-none">
-              {textVal.length} {currentLang === 'IT' ? 'caratteri' : 'Zeichen'}
-            </span>
-          </div>
-
-          <p className="text-[11px] text-[#9E9E9E] font-medium italic mt-2">
-            &nbsp;
-          </p>
-        </div>
-
+        )}
       </div>
 
-      {/* Customer Info Row (Grey Card) */}
-      <div id="customer-info-row" className="bg-[#F8F9FA] border border-[#E0E0E0] rounded-[8px] p-4 mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Customer Code */}
-          <div>
-            <label className="flex items-center space-x-2 text-[11px] font-bold text-[#1C2B3A] tracking-wider uppercase mb-1.5">
-              <User size={13} className="text-[#9E9E9E]" />
-              <span>{t.customerCode}</span>
+      {/* Order context */}
+      <div className="bg-surface border border-ink-200 rounded-2xl shadow-sm p-6 mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="md:col-span-1">
+            <label className="flex items-center gap-1.5 fp-overline text-ink-600 mb-1.5">
+              <User size={13} className="text-ink-400" /> {t.customerCode}
             </label>
             <input
-              id="input-customer-code"
               type="text"
               value={customerCode}
               onChange={(e) => setCustomerCode(e.target.value)}
-              placeholder="e.g. B0491"
-              className="w-full bg-white border border-[#E0E0E0] rounded-[6px] px-3 py-2 text-xs font-medium focus:outline-none focus:border-[#1565C0] text-[#1C2B3A]"
+              placeholder="B0491"
+              className="w-full bg-paper border border-ink-200 rounded-lg px-3 py-2.5 text-sm font-semibold fp-mono text-ink-800 focus:outline-none focus:border-brand-400 fp-focus"
             />
-            <p className="mt-1.5 text-[10px] text-[#9E9E9E] font-medium leading-normal">
-              {currentLang === 'IT' 
-                ? 'Il codice cliente deve corrispondere al codice del modello/storico clienti, es. B0491.' 
-                : 'Customer code must match the template/customer history code, e.g. B0491.'}
-            </p>
+            <p className="mt-1.5 text-[11px] text-ink-500 leading-snug">{x.custHelper}</p>
           </div>
-
-          {/* Order Reference */}
           <div>
-            <label className="flex items-center space-x-2 text-[11px] font-bold text-[#1C2B3A] tracking-wider uppercase mb-1.5">
-              <Tag size={13} className="text-[#9E9E9E]" />
-              <span>{t.orderReference}</span>
+            <label className="flex items-center gap-1.5 fp-overline text-ink-600 mb-1.5">
+              <Tag size={13} className="text-ink-400" /> {t.orderReference}
+              <span className="text-ink-400 font-medium normal-case tracking-normal lowercase">· {x.refOptional}</span>
             </label>
             <input
-              id="input-order-ref"
               type="text"
               value={orderReference}
               onChange={(e) => setOrderReference(e.target.value)}
-              placeholder="e.g. REF-403"
-              className="w-full bg-white border border-[#E0E0E0] rounded-[6px] px-3 py-2 text-xs font-medium focus:outline-none focus:border-[#1565C0] text-[#1C2B3A]"
+              placeholder="REF-403"
+              className="w-full bg-paper border border-ink-200 rounded-lg px-3 py-2.5 text-sm font-semibold fp-mono text-ink-800 focus:outline-none focus:border-brand-400 fp-focus"
             />
           </div>
-
-          {/* Date Picker (Auto-populated to today but editable) */}
           <div>
-            <label className="flex items-center space-x-2 text-[11px] font-bold text-[#1C2B3A] tracking-wider uppercase mb-1.5">
-              <Calendar size={13} className="text-[#9E9E9E]" />
-              <span>{t.date}</span>
+            <label className="flex items-center gap-1.5 fp-overline text-ink-600 mb-1.5">
+              <Calendar size={13} className="text-ink-400" /> {t.date}
             </label>
             <input
-              id="input-date"
               type="date"
               value={dateVal}
               onChange={(e) => setDateVal(e.target.value)}
-              className="w-full bg-white border border-[#E0E0E0] rounded-[6px] px-3 py-2 text-xs font-medium focus:outline-none focus:border-[#1565C0] text-[#1C2B3A]"
+              className="w-full bg-paper border border-ink-200 rounded-lg px-3 py-2.5 text-sm font-semibold text-ink-800 focus:outline-none focus:border-brand-400 fp-focus"
             />
           </div>
         </div>
       </div>
 
-      {/* Submit Button (Right Aligned) */}
-      <div className="flex justify-end">
+      <div className="flex justify-end mt-6">
         <button
-          id="btn-submit-extraction"
-          onClick={handleFormSubmit}
+          onClick={handleSubmit}
           disabled={!isFormValid}
-          className={`px-6 py-3 text-xs font-bold uppercase rounded-[4px] tracking-wider shadow-sm transition-all duration-150 ${
-            isFormValid
-              ? 'bg-[#1565C0] text-white hover:bg-[#0D47A1] cursor-pointer'
-              : 'bg-[#E0E0E0] text-[#9E9E9E] cursor-not-allowed'
+          className={`inline-flex items-center gap-2 px-7 py-3.5 rounded-full text-sm font-bold transition-colors fp-focus ${
+            isFormValid ? 'bg-brand-500 hover:bg-brand-600 text-white shadow-sm' : 'bg-ink-100 text-ink-400 cursor-not-allowed'
           }`}
         >
-          {t.submitButton}
+          {x.submit}
+          <ArrowRight size={16} />
         </button>
       </div>
     </motion.div>

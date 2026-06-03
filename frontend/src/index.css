@@ -1,31 +1,134 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700;800&family=Fredoka:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
 
+/* ============================================================================
+   FOPPA DESIGN SYSTEM — tokens mapped into Tailwind v4 @theme.
+   Source of truth: foppa-design-system/project/colors_and_type.css
+   Brand: "Taste Supporter" — Alto Adige foodservice distributor since 1964.
+   Heritage Foppa Blue #045BA9 + Foppa Red #D2342E, warm neutrals, soft
+   blue-inked shadows, calm ease-out motion. White = functional UI.
+   ========================================================================== */
 @theme {
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  /* Fonts */
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Space Mono", "SF Mono", ui-monospace, monospace;
+  --font-brand: "Fredoka", "Hanken Grotesk", sans-serif;
+
+  /* Neutrals — warm, slightly blue-inked */
+  --color-paper: #FBF8F3;
+  --color-paper-2: #F3EEE5;
+  --color-surface: #FFFFFF;
+  --color-ink-900: #18222E;
+  --color-ink-800: #283341;
+  --color-ink-700: #3B4757;
+  --color-ink-600: #56616F;
+  --color-ink-500: #717C8A;
+  --color-ink-400: #98A1AC;
+  --color-ink-300: #C4C9CF;
+  --color-ink-200: #E0DDD6;
+  --color-ink-150: #E9E5DD;
+  --color-ink-100: #F0ECE4;
+
+  /* Foppa Blue — primary */
+  --color-brand-50: #ECF4FB;
+  --color-brand-100: #CFE2F4;
+  --color-brand-200: #A3C7E8;
+  --color-brand-300: #6BA3D6;
+  --color-brand-400: #2F7DC1;
+  --color-brand-500: #045BA9;
+  --color-brand-600: #064E90;
+  --color-brand-700: #093F74;
+  --color-brand-800: #0B3358;
+  --color-brand-900: #0A2740;
+
+  /* Foppa Red — accent / CTA */
+  --color-accent-50: #FCEEED;
+  --color-accent-100: #F8D2CF;
+  --color-accent-200: #F0A8A2;
+  --color-accent-300: #E5746C;
+  --color-accent-400: #DB4A41;
+  --color-accent-500: #D2342E;
+  --color-accent-600: #B5251F;
+  --color-accent-700: #8E1B16;
+  --color-accent-800: #6B1410;
+  --color-accent-900: #4A0E0B;
+
+  /* Saffron — offers / appetite */
+  --color-saffron-50: #FDF3E2;
+  --color-saffron-100: #FAE2B8;
+  --color-saffron-300: #F2B84E;
+  --color-saffron-500: #E8920C;
+  --color-saffron-600: #C5760A;
+  --color-saffron-700: #95590A;
+
+  /* Herb — regional / bio / success */
+  --color-herb-50: #ECF4ED;
+  --color-herb-100: #CFE3D2;
+  --color-herb-300: #7CB089;
+  --color-herb-500: #3E7D52;
+  --color-herb-600: #336844;
+  --color-herb-700: #244D32;
+
+  /* Semantic aliases */
+  --color-primary: #045BA9;
+  --color-primary-hover: #064E90;
+  --color-primary-active: #093F74;
+  --color-primary-soft: #ECF4FB;
+  --color-success: #3E7D52;
+  --color-success-soft: #ECF4ED;
+  --color-warning: #E8920C;
+  --color-warning-soft: #FDF3E2;
+  --color-danger: #D2342E;
+  --color-danger-soft: #FCEEED;
+  --color-info: #045BA9;
+  --color-info-soft: #ECF4FB;
+  --color-fg: #18222E;
+  --color-fg-muted: #56616F;
+  --color-fg-subtle: #717C8A;
+  --color-border: #E0DDD6;
+  --color-border-strong: #C4C9CF;
+
+  /* Radii — friendly, echoing the logo's round forms */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
+  --radius-2xl: 36px;
+
+  /* Elevation — soft, blue-inked (never pure black) */
+  --shadow-xs: 0 1px 2px rgba(11, 51, 88, 0.06);
+  --shadow-sm: 0 2px 6px rgba(11, 51, 88, 0.07);
+  --shadow-md: 0 6px 20px rgba(11, 51, 88, 0.09);
+  --shadow-lg: 0 16px 44px rgba(11, 51, 88, 0.12);
+  --shadow-xl: 0 28px 70px rgba(11, 51, 88, 0.16);
+
+  /* Easing */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: #F8F9FA;
-  color: #1C2B3A;
-  font-size: 14px;
+  background-color: var(--color-paper);
+  color: var(--color-ink-900);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Custom scrollbars and list overrides */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #E0E0E0;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #B0BEC5;
-}
+/* Semantic type helpers (Newsreader display serif for titles, tracked caps for overlines) */
+.fp-display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; line-height: 1.08; }
+.fp-h1 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+.fp-overline { font-family: var(--font-sans); font-weight: 700; font-size: 0.6875rem; line-height: 1; letter-spacing: 0.16em; text-transform: uppercase; }
+.fp-mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
+.fp-focus:focus-visible { outline: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-brand-500) 38%, transparent); }
 
+/* Custom scrollbars */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-ink-200); border-radius: 999px; border: 2px solid var(--color-paper); }
+::-webkit-scrollbar-thumb:hover { background: var(--color-ink-300); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

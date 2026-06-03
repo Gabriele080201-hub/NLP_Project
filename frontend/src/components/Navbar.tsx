@@ -14,56 +14,43 @@ export default function Navbar({ currentLang, onLanguageChange }: NavbarProps) {
   return (
     <nav
       id="foppa-navbar"
-      className="bg-[#1565C0] text-white h-[70px] px-6 flex items-center justify-between shadow-md"
+      className="sticky top-0 z-40 h-[68px] px-6 flex items-center justify-between border-b border-ink-200 bg-surface/85 backdrop-blur-md"
     >
-      {/* Left side: Logo & Subtitles */}
-      <div className="flex items-center space-x-4">
-        {/* White rectangular container holding the logo */}
-        <div
-          id="foppa-logo-container"
-          className="bg-white px-3 py-1 rounded-[4px] h-[50px] flex items-center justify-center shadow-sm"
-        >
-          <FoppaLogo />
-        </div>
-
-        {/* Vertical divider */}
-        <div className="w-[1px] bg-white/40 h-[36px]" />
-
-        {/* Stacked Titles */}
-        <div className="flex flex-col justify-center">
-          <span className="text-[18px] font-bold leading-tight tracking-tight">
+      {/* Left: logo + app title */}
+      <div className="flex items-center gap-4">
+        <FoppaLogo variant="blue" layout="horizontal" size={34} />
+        <div className="hidden sm:block w-px h-8 bg-ink-200" />
+        <div className="hidden sm:flex flex-col leading-tight">
+          <span className="text-[15px] font-bold text-ink-900 tracking-tight">
             {t.appTitle}
           </span>
-          <span className="text-[13px] text-white/80 font-medium leading-none">
+          <span className="text-[12px] text-ink-500 font-medium">
             {t.appSubtitle}
           </span>
         </div>
       </div>
 
-      {/* Right side: Language Toggle */}
-      <div className="flex items-center space-x-2">
-        <button
-          id="btn-lang-de"
-          onClick={() => onLanguageChange('DE')}
-          className={`px-3 py-1.5 text-xs font-bold roundedTransition transition-all duration-150 rounded ${
-            currentLang === 'DE'
-              ? 'bg-white text-[#1565C0]'
-              : 'bg-transparent text-white border border-white hover:bg-white/10'
-          }`}
-        >
-          DE
-        </button>
-        <button
-          id="btn-lang-it"
-          onClick={() => onLanguageChange('IT')}
-          className={`px-3 py-1.5 text-xs font-bold roundedTransition transition-all duration-150 rounded ${
-            currentLang === 'IT'
-              ? 'bg-white text-[#1565C0]'
-              : 'bg-transparent text-white border border-white hover:bg-white/10'
-          }`}
-        >
-          IT
-        </button>
+      {/* Right: language toggle (segmented pill) */}
+      <div
+        className="flex items-center p-0.5 rounded-full border border-ink-200 bg-surface"
+        role="group"
+        aria-label="Language"
+      >
+        {(['DE', 'IT'] as const).map((lang) => (
+          <button
+            key={lang}
+            id={`btn-lang-${lang.toLowerCase()}`}
+            onClick={() => onLanguageChange(lang)}
+            aria-pressed={currentLang === lang}
+            className={`px-3.5 py-1.5 text-xs font-bold rounded-full transition-colors duration-150 fp-focus ${
+              currentLang === lang
+                ? 'bg-brand-500 text-white shadow-sm'
+                : 'text-ink-500 hover:text-brand-600'
+            }`}
+          >
+            {lang}
+          </button>
+        ))}
       </div>
     </nav>
   );

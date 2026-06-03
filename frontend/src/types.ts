@@ -30,6 +30,17 @@ export interface ExtractionNote {
   uncertain: boolean;
 }
 
+/** The original order source, captured at upload, shown during review. */
+export interface OrderSource {
+  kind: 'image' | 'audio' | 'text';
+  /** object URL for image/audio previews */
+  url?: string;
+  mime?: string;
+  /** pasted text (for text orders) */
+  text?: string;
+  filename?: string;
+}
+
 export interface ValidationSheet {
   customerCode: string;
   orderReference: string;

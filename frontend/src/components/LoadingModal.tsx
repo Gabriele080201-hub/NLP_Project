@@ -1,153 +1,96 @@
-import React, { useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { RefreshCw, Check, AlertTriangle } from 'lucide-react';
 import { Language } from '../types';
 import { translations } from '../translations';
 import { motion } from 'motion/react';
 
 interface LoadingModalProps {
   currentLang: Language;
+  /** 1 = received, 2 = extracting + matching, 3 = done */
   loadingStep: number;
+  error?: string | null;
   onComplete: () => void;
+  onClose: () => void;
 }
 
 type StepStatus = 'pending' | 'running' | 'done';
 
-export default function LoadingModal({ currentLang, loadingStep, onComplete }: LoadingModalProps) {
+export default function LoadingModal({ currentLang, loadingStep, error, onComplete, onClose }: LoadingModalProps) {
   const t = translations[currentLang];
-  
-  // Status of the four steps computed dynamically from loadingStep
-  const step1 = loadingStep >= 1 ? (loadingStep === 1 ? 'running' : 'done') : 'pending';
-  const step2 = loadingStep >= 2 ? (loadingStep === 2 ? 'running' : 'done') : 'pending';
-  const step3 = loadingStep >= 3 ? (loadingStep === 3 ? 'running' : 'done') : 'pending';
-  const step4 = loadingStep >= 4 ? (loadingStep === 4 ? 'running' : 'done') : 'pending';
+
+  const steps: { label: string; status: StepStatus }[] = [
+    { label: t.loadingStep1, status: loadingStep > 1 ? 'done' : 'running' },
+    { label: currentLang === 'IT' ? 'Estrazione AI e matching catalogo' : 'KI-Extraktion und Katalog-Matching', status: loadingStep > 2 ? 'done' : loadingStep === 2 ? 'running' : 'pending' },
+    { label: t.loadingStep4, status: loadingStep >= 3 ? 'done' : 'pending' },
+  ];
 
   useEffect(() => {
-    if (loadingStep === 4) {
-      const timer = setTimeout(() => {
-        onComplete();
-      }, 800);
+    if (loadingStep >= 3 && !error) {
+      const timer = setTimeout(onComplete, 600);
       return () => clearTimeout(timer);
     }
-  }, [loadingStep, onComplete]);
-
-  const renderBadge = (status: StepStatus) => {
-    if (status === 'running') {
-      return (
-        <span className="bg-[#1565C0] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full tracking-wider animate-pulse">
-          RUNNING
-        </span>
-      );
-    }
-    if (status === 'done') {
-      return (
-        <span className="bg-[#E8F5E9] text-[#2E7D32] text-[11px] font-bold px-2.5 py-0.5 rounded-full tracking-wider">
-          OK
-        </span>
-      );
-    }
-    return (
-      <span className="text-[#9E9E9E] text-[11px] font-semibold">
-        -
-      </span>
-    );
-  };
+  }, [loadingStep, error, onComplete]);
 
   return (
-    <div
-      id="loading-overlay"
-      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 backdrop-blur-[2px]"
-    >
+    <div className="fixed inset-0 z-50 bg-ink-900/45 flex items-center justify-center p-4 backdrop-blur-[2px]">
       <motion.div
-        id="loading-card"
-        initial={{ scale: 0.95, opacity: 0 }}
+        initial={{ scale: 0.97, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="bg-white rounded-[12px] p-10 md:px-12 md:py-10 max-w-[520px] w-full shadow-2xl flex flex-col items-center"
+        transition={{ duration: 0.2, ease: [0.22, 0.61, 0.36, 1] }}
+        className="bg-surface rounded-2xl p-10 max-w-[460px] w-full shadow-xl flex flex-col items-center"
       >
-        {/* Blue spinning circular arrows icon */}
-        <div className="text-[#1565C0] mb-5 animate-spin duration-1000">
-          <RefreshCw size={56} strokeWidth={2.5} />
-        </div>
-
-        {/* Title */}
-        <h3 className="text-[22px] font-bold text-[#1C2B3A] text-center mb-1 leading-tight">
-          {t.loadingTitle}
-        </h3>
-
-        {/* Subtitle */}
-        <p className="text-[11px] text-[#9E9E9E] font-bold tracking-widest text-center uppercase mb-6">
-          {t.loadingSubtitle}
-        </p>
-
-        {/* Divider */}
-        <div className="w-full h-[1px] bg-[#E0E0E0] mb-6" />
-
-        {/* Steps */}
-        <div className="w-full space-y-4">
-          {/* Step 1 */}
-          <div className="flex items-center justify-between text-sm">
-            <span
-              className={`font-semibold transition-colors duration-150 ${
-                step1 === 'pending'
-                  ? 'text-[#9E9E9E]'
-                  : step1 === 'running'
-                  ? 'text-[#1565C0] font-bold'
-                  : 'text-[#1C2B3A]'
-              }`}
+        {error ? (
+          <>
+            <div className="w-16 h-16 rounded-full bg-danger-soft text-danger flex items-center justify-center mb-5">
+              <AlertTriangle size={32} strokeWidth={2.25} />
+            </div>
+            <h3 className="fp-h1 text-[22px] text-ink-900 text-center mb-2">
+              {currentLang === 'IT' ? 'Qualcosa è andato storto' : 'Etwas ist schiefgelaufen'}
+            </h3>
+            <p className="text-sm text-ink-600 text-center mb-7 leading-relaxed">{error}</p>
+            <button
+              onClick={onClose}
+              className="px-6 py-3 bg-brand-500 hover:bg-brand-600 text-white rounded-full text-sm font-bold transition-colors fp-focus"
             >
-              1. {t.loadingStep1}
-            </span>
-            {renderBadge(step1)}
-          </div>
+              {currentLang === 'IT' ? 'Chiudi e riprova' : 'Schließen und erneut versuchen'}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="text-brand-500 mb-5 animate-spin" style={{ animationDuration: '1100ms' }}>
+              <RefreshCw size={48} strokeWidth={2.25} />
+            </div>
+            <h3 className="fp-h1 text-[22px] text-ink-900 text-center mb-1">{t.loadingTitle}</h3>
+            <p className="fp-overline text-ink-400 text-center mb-7">{t.loadingSubtitle}</p>
 
-          {/* Step 2 */}
-          <div className="flex items-center justify-between text-sm">
-            <span
-              className={`font-semibold transition-colors duration-150 ${
-                step2 === 'pending'
-                  ? 'text-[#9E9E9E]'
-                  : step2 === 'running'
-                  ? 'text-[#1565C0] font-bold'
-                  : 'text-[#1C2B3A]'
-              }`}
-            >
-              2. {t.loadingStep2}
-            </span>
-            {renderBadge(step2)}
-          </div>
+            <div className="w-full h-px bg-ink-150 mb-6" />
 
-          {/* Step 3 */}
-          <div className="flex items-center justify-between text-sm">
-            <span
-              className={`font-semibold transition-colors duration-150 ${
-                step3 === 'pending'
-                  ? 'text-[#9E9E9E]'
-                  : step3 === 'running'
-                  ? 'text-[#1565C0] font-bold'
-                  : 'text-[#1C2B3A]'
-              }`}
-            >
-              3. {t.loadingStep3}
-            </span>
-            {renderBadge(step3)}
-          </div>
-
-          {/* Step 4 */}
-          <div className="flex items-center justify-between text-sm">
-            <span
-              className={`font-semibold transition-colors duration-150 ${
-                step4 === 'pending'
-                  ? 'text-[#9E9E9E]'
-                  : step4 === 'running'
-                  ? 'text-[#1565C0] font-bold'
-                  : 'text-[#1C2B3A]'
-              }`}
-            >
-              4. {t.loadingStep4}
-            </span>
-            {renderBadge(step4)}
-          </div>
-        </div>
+            <div className="w-full space-y-3.5">
+              {steps.map((s, i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <span
+                    className={`font-semibold transition-colors ${
+                      s.status === 'pending' ? 'text-ink-400' : s.status === 'running' ? 'text-brand-600' : 'text-ink-800'
+                    }`}
+                  >
+                    {i + 1}. {s.label}
+                  </span>
+                  {s.status === 'running' && (
+                    <span className="bg-brand-500 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full animate-pulse">
+                      {currentLang === 'IT' ? 'IN CORSO' : 'LÄUFT'}
+                    </span>
+                  )}
+                  {s.status === 'done' && (
+                    <span className="bg-success-soft text-success text-[11px] font-bold px-1.5 py-0.5 rounded-full inline-flex items-center">
+                      <Check size={13} strokeWidth={3} />
+                    </span>
+                  )}
+                  {s.status === 'pending' && <span className="text-ink-300 text-[11px] font-semibold">—</span>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </motion.div>
     </div>
   );
