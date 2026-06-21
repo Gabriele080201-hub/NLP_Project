@@ -1,7 +1,5 @@
-# Claude Code — escludi file locali, includi hook e settings condivisi
-.claude/*
-!.claude/settings.json
-!.claude/hooks/
+# Claude Code local files — never commit
+.claude/
 
 # Secrets
 .env
